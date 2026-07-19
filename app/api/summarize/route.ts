@@ -18,16 +18,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Ссылка на видео обязательна." }, { status: 400 })
     }
 
-    // 1. Получение расшифровки через Supadata
+    // 1. Получение расшифровки через Supadata (бесплатный transcript)
     let transcriptText = ""
     try {
-      const response = await supadata.youtube.translate({
+      const response = await supadata.youtube.transcript({
         url,
-        lang: "ru",
         text: true,
       })
       if (response && response.content) {
-        transcriptText = response.content
+        transcriptText = typeof response.content === "string" 
+          ? response.content 
+          : response.content.map((chunk: any) => chunk.text || "").join(" ")
       }
     } catch (err: any) {
       return NextResponse.json(
@@ -40,11 +41,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Текст видео пуст или недоступен." }, { status: 422 })
     }
 
-    // 2. Суммаризация через Gemini 3.5 Flash
+    // 2. Суммаризация через Gemini 3.5 Flash (с переводом на русский)
     let summaryText = ""
     try {
       const promptInput =
-        `Ты — профессиональный аналитик видеоконтента. Твоя задача — составить емкую, структурированную сводку по предоставленному тексту расшифровки.\n` +
+        `Ты — профессиональный аналитик видеоконтента. Твоя задача — составить емкую, структурированную сводку на русском языке по предоставленному тексту расшифровки.\n` +
+        `Если текст расшифровки на другом языке — сначала переведи его на русский, затем составь сводку.\n` +
         `Ответ должен быть строго отформатирован с использованием синтаксиса Markdown по следующей структуре:\n\n` +
         `## 📌 Главная суть (TL;DR)\n` +
         `(Краткий обзор видео в 2-4 предложениях)\n\n` +
