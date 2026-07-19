@@ -3,22 +3,17 @@
 import { useEffect, useRef, useState } from "react"
 import { ArrowRight, Loader2, Play, AlertCircle } from "lucide-react"
 import { isValidYouTubeUrl } from "@/lib/youtube"
-import {
-  fakeSummarize,
-  PROCESSING_STEPS,
-  type SummaryResult,
-} from "@/lib/mock-summary"
 import { SummarySkeleton } from "./summary-skeleton"
 import { SummaryResultCard } from "./summary-result"
 
-type Status = "idle" | "loading" | "done"
+type Status = "idle" | "loading" | "done" | "error"
 
 export function Summarizer() {
   const [url, setUrl] = useState("")
   const [touched, setTouched] = useState(false)
   const [status, setStatus] = useState<Status>("idle")
-  const [result, setResult] = useState<SummaryResult | null>(null)
-  const [stepIndex, setStepIndex] = useState(0)
+  const [summary, setSummary] = useState("")
+  const [errorMessage, setErrorMessage] = useState("")
   const inputRef = useRef<HTMLInputElement>(null)
 
   const trimmed = url.trim()
@@ -31,32 +26,44 @@ export function Summarizer() {
     inputRef.current?.focus()
   }, [])
 
-  // Прокручиваем этапы обработки во время загрузки.
-  useEffect(() => {
-    if (status !== "loading") return
-    setStepIndex(0)
-    const interval = setInterval(() => {
-      setStepIndex((i) => Math.min(i + 1, PROCESSING_STEPS.length - 1))
-    }, 1600)
-    return () => clearInterval(interval)
-  }, [status])
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setTouched(true)
     if (!isValid || status === "loading") return
+
     setStatus("loading")
-    setResult(null)
-    const summary = await fakeSummarize(trimmed)
-    setResult(summary)
-    setStatus("done")
+    setSummary("")
+    setErrorMessage("")
+
+    try {
+      const res = await fetch("/api/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: trimmed }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        setErrorMessage(data.error || "Произошла ошибка при обработке видео.")
+        setStatus("error")
+        return
+      }
+
+      setSummary(data.summary || "")
+      setStatus("done")
+    } catch {
+      setErrorMessage("Не удалось связаться с сервером. Попробуйте позже.")
+      setStatus("error")
+    }
   }
 
   function handleClear() {
-    setResult(null)
+    setSummary("")
     setStatus("idle")
     setUrl("")
     setTouched(false)
+    setErrorMessage("")
     inputRef.current?.focus()
   }
 
@@ -116,11 +123,27 @@ export function Summarizer() {
       </form>
 
       <div className="mt-8">
-        {status === "loading" && (
-          <SummarySkeleton statusText={PROCESSING_STEPS[stepIndex]} />
+        {status === "loading" && <SummarySkeleton />}
+        {status === "done" && summary && (
+          <SummaryResultCard summary={summary} onClear={handleClear} />
         )}
-        {status === "done" && result && (
-          <SummaryResultCard result={result} onClear={handleClear} />
+        {status === "error" && (
+          <div className="animate-fade-in-up rounded-2xl border border-destructive/30 bg-destructive/5 p-5 sm:p-6">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
+              <div>
+                <h3 className="font-semibold text-destructive">Ошибка</h3>
+                <p className="mt-1 text-sm text-muted-foreground">{errorMessage}</p>
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-muted"
+                >
+                  Попробовать снова
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

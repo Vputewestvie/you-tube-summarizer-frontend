@@ -1,4 +1,4 @@
-export function SummarySkeleton({ statusText }: { statusText: string }) {
+export function SummarySkeleton() {
   return (
     <div
       className="animate-fade-in-up rounded-2xl border border-border bg-card p-5 sm:p-6"
@@ -7,7 +7,7 @@ export function SummarySkeleton({ statusText }: { statusText: string }) {
     >
       <div className="mb-5 flex items-center gap-2 text-sm text-muted-foreground">
         <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
-        <span className="tabular-nums">{statusText}</span>
+        <span className="tabular-nums">Анализируем видео…</span>
       </div>
 
       {/* Мини-карточка видео */}
