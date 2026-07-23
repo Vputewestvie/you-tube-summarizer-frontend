@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { Supadata } from "@supadata/js"
 import { GoogleGenAI } from "@google/genai"
+import { createClient } from '@supabase/supabase-js'
 
 const supadata = new Supadata({
   apiKey: process.env.SUPADATA_API_KEY || "",
@@ -10,12 +11,51 @@ const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY || "",
 })
 
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+
 export async function POST(request: Request) {
   try {
     const { url } = await request.json()
 
     if (!url) {
       return NextResponse.json({ error: "Ссылка на видео обязательна." }, { status: 400 })
+    }
+
+    // Get user from auth header
+    const authHeader = request.headers.get('authorization')
+    if (!authHeader) {
+      return NextResponse.json({ error: "Не авторизован" }, { status: 401 })
+    }
+
+    // Use service role client to verify user (server-side)
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''))
+    
+    if (userError || !user) {
+      return NextResponse.json({ error: "Не авторизован" }, { status: 401 })
+    }
+
+    // Check user credits using service role (bypasses RLS)
+    const { data: userData, error: creditsError } = await supabaseAdmin
+      .from('users')
+      .select('credits')
+      .eq('id', user.id)
+      .single()
+
+    if (creditsError || !userData || userData.credits <= 0) {
+      return NextResponse.json({ error: "Недостаточно кредитов" }, { status: 403 })
+    }
+
+    // Decrement credits FIRST (before making external API calls)
+    const { error: updateError } = await supabaseAdmin
+      .from('users')
+      .update({ credits: userData.credits - 1 })
+      .eq('id', user.id)
+
+    if (updateError) {
+      console.error('Error updating credits:', updateError)
     }
 
     // 1. Получение расшифровки через Supadata (бесплатный transcript)
@@ -70,7 +110,22 @@ export async function POST(request: Request) {
       )
     }
 
-    return NextResponse.json({ summary: summaryText })
+    // Save summary to database (using service role to bypass RLS)
+    const { error: summaryError } = await supabaseAdmin
+      .from('summaries')
+      .insert({
+        user_id: user.id,
+        video_url: url,
+      })
+
+    if (summaryError) {
+      console.error('Error saving summary:', summaryError)
+    }
+
+    return NextResponse.json({ 
+      summary: summaryText,
+      credits: userData.credits - 1 
+    })
   } catch (error: any) {
     return NextResponse.json({ error: "Внутренняя ошибка сервера." }, { status: 500 })
   }

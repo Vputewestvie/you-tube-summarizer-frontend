@@ -1,10 +1,13 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { ArrowRight, Loader2, Play, AlertCircle } from "lucide-react"
+import { ArrowRight, Loader2, Play, AlertCircle, Coins } from "lucide-react"
 import { isValidYouTubeUrl } from "@/lib/youtube"
 import { SummarySkeleton } from "./summary-skeleton"
 import { SummaryResultCard } from "./summary-result"
+import { useAuth } from "@/contexts/auth-context"
+import { AuthForm } from "@/components/auth-form"
+import { supabase } from "@/lib/supabase"
 
 type Status = "idle" | "loading" | "done" | "error"
 
@@ -14,7 +17,9 @@ export function Summarizer() {
   const [status, setStatus] = useState<Status>("idle")
   const [summary, setSummary] = useState("")
   const [errorMessage, setErrorMessage] = useState("")
+  const [showAuth, setShowAuth] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const { user, loading, credits, refreshCredits } = useAuth()
 
   const trimmed = url.trim()
   const isEmpty = trimmed.length === 0
@@ -31,14 +36,33 @@ export function Summarizer() {
     setTouched(true)
     if (!isValid || status === "loading") return
 
+    // Check if user is authenticated
+    if (!user) {
+      setShowAuth(true)
+      return
+    }
+
     setStatus("loading")
     setSummary("")
     setErrorMessage("")
 
     try {
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      if (!session?.access_token) {
+        setErrorMessage("Сессия истекла. Пожалуйста, войдите снова.")
+        setStatus("error")
+        setShowAuth(true)
+        return
+      }
+
       const res = await fetch("/api/summarize", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
+        },
         body: JSON.stringify({ url: trimmed }),
       })
 
@@ -52,6 +76,9 @@ export function Summarizer() {
 
       setSummary(data.summary || "")
       setStatus("done")
+      
+      // Refresh credits after successful summary
+      await refreshCredits()
     } catch {
       setErrorMessage("Не удалось связаться с сервером. Попробуйте позже.")
       setStatus("error")
@@ -67,8 +94,36 @@ export function Summarizer() {
     inputRef.current?.focus()
   }
 
+  // Show auth form if user is not logged in
+  if (showAuth || !user) {
+    return (
+      <div className="w-full max-w-2xl mx-auto">
+        <div className="mb-6 text-center">
+          <h2 className="text-2xl font-bold mb-2">Добро пожаловать!</h2>
+          <p className="text-muted-foreground">
+            Войдите или зарегистрируйтесь, чтобы получить доступ к сервису. 
+            Новые пользователи получают 5 бесплатных кредитов!
+          </p>
+        </div>
+        <AuthForm />
+      </div>
+    )
+  }
+
   return (
     <div className="w-full">
+      {/* Credits display */}
+      <div className="mb-4 flex items-center justify-between rounded-lg border border-border bg-card p-3">
+        <div className="flex items-center gap-2">
+          <Coins className="h-5 w-5 text-yellow-500" />
+          <span className="text-sm font-medium">Ваши кредиты:</span>
+          <span className="text-lg font-bold text-primary">{credits}</span>
+        </div>
+        <div className="text-xs text-muted-foreground">
+          -1 кредит за каждое видео
+        </div>
+      </div>
+
       <form onSubmit={handleSubmit} noValidate>
         <div
           className={`flex flex-col gap-2 rounded-xl border bg-card p-2 shadow-sm transition-colors focus-within:ring-2 focus-within:ring-ring sm:flex-row sm:items-center ${
