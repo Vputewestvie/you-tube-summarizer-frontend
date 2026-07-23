@@ -1,18 +1,33 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 
 interface CatAvatarProps {
   name: string;
-  src: string;
+  src?: string;
   size?: 'sm' | 'md' | 'lg';
   side?: 'left' | 'right';
+  catImages?: string[];
 }
 
-export function CatAvatar({ name, src, size = 'md', side = 'left' }: CatAvatarProps) {
+const defaultCatImages = [
+  '/alisa.jpg',
+  '/ksyusha.jpg',
+  '/cat-2.jpg',
+  '/cat-3.jpg',
+  '/cat-4.jpg',
+  '/cat-6.jpg',
+  '/cat-7.jpg',
+  '/cat-8.jpg',
+  '/cat-9.jpg',
+  '/cat-10.jpg',
+];
+
+export function CatAvatar({ name, src, size = 'md', side = 'left', catImages = defaultCatImages }: CatAvatarProps) {
   const [isBlinking, setIsBlinking] = useState(false);
   const [isTilting, setIsTilting] = useState(false);
+  const [currentImage, setCurrentImage] = useState(src || catImages[0]);
 
   const sizeMap = {
     sm: 64,
@@ -22,15 +37,30 @@ export function CatAvatar({ name, src, size = 'md', side = 'left' }: CatAvatarPr
 
   const pixelSize = sizeMap[size];
 
+  // Rotate through cat images
+  useEffect(() => {
+    if (catImages.length > 1) {
+      const rotationInterval = setInterval(() => {
+        setCurrentImage(prev => {
+          const currentIndex = catImages.indexOf(prev);
+          const nextIndex = (currentIndex + 1) % catImages.length;
+          return catImages[nextIndex];
+        });
+      }, 5000 + Math.random() * 3000);
+
+      return () => clearInterval(rotationInterval);
+    }
+  }, [catImages]);
+
   // Random blink
-  useState(() => {
+  useEffect(() => {
     const blinkInterval = setInterval(() => {
       setIsBlinking(true);
       setTimeout(() => setIsBlinking(false), 150);
     }, 3000 + Math.random() * 4000);
 
     return () => clearInterval(blinkInterval);
-  });
+  }, []);
 
   return (
     <div
@@ -51,7 +81,7 @@ export function CatAvatar({ name, src, size = 'md', side = 'left' }: CatAvatarPr
         style={{ width: pixelSize, height: pixelSize }}
       >
         <Image
-          src={src}
+          src={currentImage}
           alt={name}
           fill
           className="object-cover"
